@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // ── Change BASE_URL to your deployed Node.js server address ──────────────────
-export const BASE_URL = 'http://YOUR_SERVER_IP:5000/api';
+export const BASE_URL = 'http://192.168.29.220:5000/api';
 
 const api = axios.create({ baseURL: BASE_URL, timeout: 15000 });
 
