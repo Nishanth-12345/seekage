@@ -1,4 +1,16 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+
+const PARENT_PW_KEY = 'seekage:v1:parentPasswords';
+
+function loadParentPasswords(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(PARENT_PW_KEY);
+    if (!raw) return { '9999999999': '1234' };
+    return JSON.parse(raw) as Record<string, string>;
+  } catch {
+    return { '9999999999': '1234' };
+  }
+}
 
 export type Portal = 'seekage' | 'school';
 export type Role = 'admin' | 'student' | 'parent' | 'teacher' | 'counselor' | 'psychologist';
@@ -46,10 +58,15 @@ export const AGE_GROUPS: Array<{ id: 'A' | 'B' | 'C'; label: string; range: stri
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [lang, setLang] = useState<Lang>('en');
-  const [parentPasswords, setParentPasswords] = useState<Record<string, string>>({
-    // demo seed: student with phone 9999999999 → parent password "1234"
-    '9999999999': '1234',
-  });
+  const [parentPasswords, setParentPasswords] = useState<Record<string, string>>(() => loadParentPasswords());
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PARENT_PW_KEY, JSON.stringify(parentPasswords));
+    } catch {
+      // storage full or disabled — keep working in-memory
+    }
+  }, [parentPasswords]);
 
   const login = (u: User) => setUser(u);
   const logout = () => setUser(null);

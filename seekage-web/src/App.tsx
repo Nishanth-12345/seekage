@@ -2,6 +2,7 @@ import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './utils/AuthContext';
 import Login from './pages/Auth/Login';
+import AdminLogin from './pages/Auth/AdminLogin';
 import Register from './pages/Auth/Register';
 import MainLayout from './components/MainLayout';
 import SeekageHome from './pages/Seekage/SeekageHome';
@@ -21,6 +22,7 @@ export default function App() {
     return (
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/admin-login" element={<AdminLogin />} />
         <Route path="/register" element={<Register />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>

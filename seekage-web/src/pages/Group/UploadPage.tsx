@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth, T } from '../../utils/AuthContext';
 import { useData, ContentKind } from '../../utils/DataContext';
+import { saveFile } from '../../utils/fileStorage';
 
 const TYPES: ContentKind[] = ['video', 'note', 'document', 'assignment'];
 
@@ -20,11 +21,18 @@ export default function UploadPage() {
   const [title, setTitle] = useState('');
   const [file, setFile] = useState<File | null>(null);
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim() || !file) { alert('Fill title and pick a file'); return; }
+    const contentId = Date.now();
+    try {
+      await saveFile(contentId, file);
+    } catch (err) {
+      alert('Could not save file locally: ' + (err instanceof Error ? err.message : 'unknown error'));
+      return;
+    }
     addContent({
-      contentId: Date.now(),
+      contentId,
       subjectId,
       kind,
       title: title.trim(),
@@ -32,7 +40,7 @@ export default function UploadPage() {
       hiddenByParent: false,
       uploadedBy: user?.name || 'Unknown',
     });
-    alert('Uploaded (mock).');
+    alert('Uploaded.');
     navigate(-1);
   }
 

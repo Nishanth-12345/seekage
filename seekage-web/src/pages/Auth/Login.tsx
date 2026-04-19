@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, T, Portal, Role, ageGroupOf } from '../../utils/AuthContext';
 
-type Flow = 'pick' | 'seekage-admin' | 'seekage-student' | 'school-teacher' | 'school-student';
+type Flow = 'pick' | 'seekage-student' | 'school-teacher' | 'school-student';
 
 export default function Login() {
   const { login, lang, setLang } = useAuth();
@@ -13,7 +13,6 @@ export default function Login() {
   if (flow === 'pick') return <PortalPicker t={t} lang={lang} setLang={setLang} setFlow={setFlow} navigate={navigate} />;
 
   const goBack = () => setFlow('pick');
-  if (flow === 'seekage-admin')   return <SubForm title="Seekage Admin Login"   portal="seekage" role="admin"   onBack={goBack} onSubmit={login} navigate={navigate} />;
   if (flow === 'seekage-student') return <SubForm title="Seekage Student Login" portal="seekage" role="student" onBack={goBack} onSubmit={login} navigate={navigate} askAge />;
   if (flow === 'school-teacher')  return <SubForm title="School Teacher Login"  portal="school"  role="teacher" onBack={goBack} onSubmit={login} navigate={navigate} askSchool />;
   return <SubForm title="School Student Login" portal="school" role="student" onBack={goBack} onSubmit={login} navigate={navigate} askSchool />;
@@ -34,10 +33,6 @@ function PortalPicker({ t, lang, setLang, setFlow, navigate }: any) {
       <p style={{ color: '#555', fontSize: 13, marginBottom: 12 }}>{t.chooseLogin}</p>
 
       <div style={{ display: 'grid', gap: 12 }}>
-        <button className="portal-tile" onClick={() => setFlow('seekage-admin')}>
-          <span className="portal-icon">🛠</span>
-          <div><div className="portal-title">Seekage · Admin</div><div className="portal-sub">Upload videos & notes, manage age groups</div></div>
-        </button>
         <button className="portal-tile" onClick={() => setFlow('seekage-student')}>
           <span className="portal-icon">📚</span>
           <div><div className="portal-title">Seekage · Student</div><div className="portal-sub">Sign in by age — A / B / C groups</div></div>

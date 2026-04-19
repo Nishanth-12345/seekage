@@ -1,4 +1,30 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { deleteFile } from './fileStorage';
+
+const STORAGE_PREFIX = 'seekage:v1:';
+
+function loadPersisted<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(STORAGE_PREFIX + key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    return parsed as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function usePersistedState<T>(key: string, initial: T) {
+  const [state, setState] = useState<T>(() => loadPersisted(key, initial));
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(state));
+    } catch {
+      // storage full or disabled — keep working in-memory
+    }
+  }, [key, state]);
+  return [state, setState] as const;
+}
 
 export type ContentKind = 'video' | 'note' | 'document' | 'assignment';
 
@@ -109,19 +135,23 @@ const SEED_MEETINGS: MeetingLink[] = [
   },
 ];
 
+const SEED_QA: QAEntry[] = [
+  { id: 1, subjectId: 'subj-1', question: 'How to solve linear equations?', askedBy: 'Arjun',
+    answers: [{ text: 'Isolate x on one side.', by: 'Teacher' }] },
+];
+
+const SEED_CHAT: ChatMsg[] = [
+  { id: 1, subjectId: 'subj-1', text: 'Good morning everyone!', senderId: 99, senderName: 'Teacher', time: '09:01' },
+];
+
 export function DataProvider({ children }: { children: ReactNode }) {
-  const [groups, setGroups] = useState<Group[]>(SEED_GROUPS);
-  const [subjects, setSubjects] = useState<Subject[]>(SEED_SUBJECTS);
-  const [content, setContent] = useState<ContentItem[]>(SEED_CONTENT);
-  const [meetings, setMeetings] = useState<MeetingLink[]>(SEED_MEETINGS);
-  const [readMeetings, setReadMeetings] = useState<number[]>([]);
-  const [qa, setQa] = useState<QAEntry[]>([
-    { id: 1, subjectId: 'subj-1', question: 'How to solve linear equations?', askedBy: 'Arjun',
-      answers: [{ text: 'Isolate x on one side.', by: 'Teacher' }] },
-  ]);
-  const [chat, setChat] = useState<ChatMsg[]>([
-    { id: 1, subjectId: 'subj-1', text: 'Good morning everyone!', senderId: 99, senderName: 'Teacher', time: '09:01' },
-  ]);
+  const [groups, setGroups] = usePersistedState<Group[]>('groups', SEED_GROUPS);
+  const [subjects, setSubjects] = usePersistedState<Subject[]>('subjects', SEED_SUBJECTS);
+  const [content, setContent] = usePersistedState<ContentItem[]>('content', SEED_CONTENT);
+  const [meetings, setMeetings] = usePersistedState<MeetingLink[]>('meetings', SEED_MEETINGS);
+  const [readMeetings, setReadMeetings] = usePersistedState<number[]>('readMeetings', []);
+  const [qa, setQa] = usePersistedState<QAEntry[]>('qa', SEED_QA);
+  const [chat, setChat] = usePersistedState<ChatMsg[]>('chat', SEED_CHAT);
 
   const value: DataContextValue = {
     groups,
@@ -132,7 +162,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
     addContent: (c) => setContent((prev) => [...prev, c]),
     toggleHide: (id) =>
       setContent((prev) => prev.map((c) => (c.contentId === id ? { ...c, hiddenByParent: !c.hiddenByParent } : c))),
-    deleteContent: (id) => setContent((prev) => prev.filter((c) => c.contentId !== id)),
+    deleteContent: (id) => {
+      setContent((prev) => prev.filter((c) => c.contentId !== id));
+      deleteFile(id).catch(() => { /* best-effort cleanup */ });
+    },
     meetings,
     addMeeting: (m) => setMeetings((prev) => [m, ...prev]),
     readMeetings,

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth, T } from '../../utils/AuthContext';
 import { useData, ContentKind } from '../../utils/DataContext';
+import VideoPlayer from '../../components/VideoPlayer';
 
 const TABS: Array<'all' | ContentKind> = ['all', 'video', 'note', 'document'];
 
@@ -20,19 +21,19 @@ export default function SubjectPage() {
 
   const canUpload = user && (user.role === 'admin' || (isSchool && user.role === 'teacher'));
   const canDelete = user?.role === 'admin';
-  const isParent = user?.role === 'parent';
   const isStudent = user?.role === 'student';
 
   const [activeTab, setActiveTab] = useState<'all' | ContentKind>('all');
   const [modal, setModal] = useState<null | { contentId: number; title: string; currentlyHidden: boolean }>(null);
   const [pw, setPw] = useState('');
+  const [playing, setPlaying] = useState<null | { contentId: number; title: string; fileName: string }>(null);
 
   if (!group || !subject) return <div className="empty">Subject not found.</div>;
 
   const items = content
     .filter((c) => c.subjectId === subjectId)
     .filter((c) => (activeTab === 'all' ? true : c.kind === activeTab));
-  const visible = isStudent || isParent ? items.filter((c) => !c.hiddenByParent) : items;
+  const visible = items;
 
   function askHide(c: (typeof content)[number]) {
     setModal({ contentId: c.contentId, title: c.title, currentlyHidden: c.hiddenByParent });
@@ -75,25 +76,39 @@ export default function SubjectPage() {
         {visible.length === 0 && <div className="empty">No content here yet.</div>}
         {visible.map((c) => {
           const icon = c.kind === 'video' ? '🎬' : c.kind === 'document' ? '📄' : c.kind === 'assignment' ? '📑' : '📝';
+          const locked = isStudent && c.hiddenByParent;
+          const isPlayable = c.kind === 'video' && !locked;
           return (
-            <div key={c.contentId} className={`card ${themeClass}`} style={{ cursor: 'default' }}>
+            <div
+              key={c.contentId}
+              className={`card ${themeClass}`}
+              style={{ cursor: isPlayable ? 'pointer' : 'default', opacity: locked ? 0.55 : 1 }}
+              onClick={isPlayable ? () => setPlaying({ contentId: c.contentId, title: c.title, fileName: c.fileName }) : undefined}
+            >
               <div className={`card-icon ${isSchool ? 'green-ic' : ''}`}>{icon}</div>
               <div style={{ flex: 1 }}>
                 <div className="card-title">{c.title}</div>
-                <div className="card-sub">{c.kind} · {c.fileName}</div>
+                <div className="card-sub">
+                  {c.kind} · {c.fileName}
+                  {isPlayable ? ' · ▶ Tap to play' : ''}
+                </div>
                 {c.hiddenByParent && <div className="hidden-label">🔒 Hidden by parent</div>}
               </div>
-              {(isParent || user?.role === 'admin') && (
+              {isStudent && (
                 <button
                   className={`zero-btn ${c.hiddenByParent ? 'on' : ''}`}
-                  onClick={() => askHide(c)}
+                  onClick={(e) => { e.stopPropagation(); askHide(c); }}
                   title={c.hiddenByParent ? t.unhide : t.hide}
                   aria-label={c.hiddenByParent ? t.unhide : t.hide}>
                   0
                 </button>
               )}
               {canDelete && (
-                <button className="hide-btn warn" onClick={() => deleteContent(c.contentId)}>Delete</button>
+                <button
+                  className="hide-btn warn"
+                  onClick={(e) => { e.stopPropagation(); deleteContent(c.contentId); }}>
+                  Delete
+                </button>
               )}
             </div>
           );
@@ -123,6 +138,15 @@ export default function SubjectPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {playing && (
+        <VideoPlayer
+          contentId={playing.contentId}
+          title={playing.title}
+          fileName={playing.fileName}
+          onClose={() => setPlaying(null)}
+        />
       )}
     </>
   );
