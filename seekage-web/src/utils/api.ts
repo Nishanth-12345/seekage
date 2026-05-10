@@ -11,6 +11,7 @@ export interface RegisterPayload {
   age?: string;
   state?: string;
   schoolCode?: string;
+  role?: 'student' | 'teacher';
   registrationType: 'seekage' | 'school';
 }
 
@@ -19,11 +20,20 @@ export const loginUser = (phone: string, password: string, role: string) =>
 
 export const registerUser = (data: RegisterPayload) => api.post('/auth/register', data);
 
-export const fetchContent = (groupId: number) => api.get(`/content/${groupId}`);
+export const fetchContent = (groupId: number) => api.get(`/groups/content/${groupId}`);
 
-export const uploadContent = (formData: FormData, token: string) =>
-  api.post('/content/upload', formData, {
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'multipart/form-data' },
+export interface UploadContentPayload {
+  group_id: number;
+  subject_id: number;
+  subject_name?: string;
+  content_type: 'video' | 'document' | 'note' | 'assignment';
+  title: string;
+  file_url: string;
+}
+
+export const uploadContent = (data: UploadContentPayload, token: string) =>
+  api.post('/groups/content', data, {
+    headers: { Authorization: `Bearer ${token}` },
   });
 
 export const toggleHide = (contentId: number, hidden: boolean, token: string) =>

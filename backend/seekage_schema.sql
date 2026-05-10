@@ -17,6 +17,7 @@ CREATE TABLE Users (
   age              INT DEFAULT NULL,
   state            VARCHAR(50) DEFAULT NULL,
   preferred_language ENUM('en','ml') DEFAULT 'en',
+  group_id         INT DEFAULT NULL,
   created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -39,11 +40,18 @@ CREATE TABLE Study_Groups (
   FOREIGN KEY (school_id) REFERENCES Schools(school_id) ON DELETE SET NULL
 );
 
+ALTER TABLE Users
+  ADD CONSTRAINT fk_users_group
+  FOREIGN KEY (group_id) REFERENCES Study_Groups(group_id) ON DELETE SET NULL;
+
 -- ─── Content ──────────────────────────────────────────────────────────────────
 CREATE TABLE Content (
   content_id         INT AUTO_INCREMENT PRIMARY KEY,
+  subject_id         INT DEFAULT NULL,
   group_id           INT,
   uploader_id        INT,
+  instructor_id      INT DEFAULT NULL,
+  instructor_name    ENUM('seekage','school') NOT NULL DEFAULT 'seekage',
   content_type       ENUM('video','document','note','assignment') NOT NULL,
   subject_name       VARCHAR(100) DEFAULT NULL,
   title              VARCHAR(200) NOT NULL,
@@ -51,8 +59,26 @@ CREATE TABLE Content (
   is_hidden_by_parent BOOLEAN DEFAULT FALSE,
   uploaded_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (group_id)    REFERENCES Study_Groups(group_id) ON DELETE SET NULL,
-  FOREIGN KEY (uploader_id) REFERENCES Users(user_id) ON DELETE SET NULL
+  FOREIGN KEY (uploader_id) REFERENCES Users(user_id) ON DELETE SET NULL,
+  FOREIGN KEY (instructor_id) REFERENCES Users(user_id) ON DELETE SET NULL
 );
+
+CREATE TABLE Subjects (
+  subject_id      INT AUTO_INCREMENT PRIMARY KEY,
+  group_id        INT NOT NULL,
+  school_id       INT DEFAULT NULL,
+  subject_name    VARCHAR(100) NOT NULL,
+  instructor_id   INT DEFAULT NULL,
+  instructor_name ENUM('seekage','school') NOT NULL,
+  created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (group_id)      REFERENCES Study_Groups(group_id) ON DELETE CASCADE,
+  FOREIGN KEY (school_id)     REFERENCES Schools(school_id) ON DELETE SET NULL,
+  FOREIGN KEY (instructor_id) REFERENCES Users(user_id) ON DELETE SET NULL
+);
+
+ALTER TABLE Content
+  ADD CONSTRAINT fk_content_subject
+  FOREIGN KEY (subject_id) REFERENCES Subjects(subject_id) ON DELETE SET NULL;
 
 -- ─── Q&A ──────────────────────────────────────────────────────────────────────
 CREATE TABLE QA_Questions (
@@ -101,7 +127,7 @@ INSERT INTO Study_Groups (group_type, group_name) VALUES
   ('age_based', 'Age 8-9 Batch A'),
   ('age_based', 'Age 10-11 Batch A'),
   ('age_based', 'Age 12-13 Batch A'),
-  ('age_based', 'Age 14-15 Batch A');
+  ('age_based', 'Age 14-16 Batch A');
 
 -- ─── Seed: Sample School Group ───────────────────────────────────────────────
 INSERT INTO Study_Groups (group_type, group_name, school_id) VALUES

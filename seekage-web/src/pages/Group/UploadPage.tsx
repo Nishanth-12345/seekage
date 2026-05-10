@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth, T } from '../../utils/AuthContext';
 import { useData, ContentKind } from '../../utils/DataContext';
-import { saveFile } from '../../utils/fileStorage';
+import { uploadContent } from '../../utils/api';
+import { uploadContentFileToFirebase } from '../../utils/firebaseStorage';
 
 const TYPES: ContentKind[] = ['video', 'note', 'document', 'assignment'];
 
@@ -20,38 +21,61 @@ export default function UploadPage() {
   const [kind, setKind] = useState<ContentKind>('video');
   const [title, setTitle] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim() || !file) { alert('Fill title and pick a file'); return; }
-    const contentId = Date.now();
-    try {
-      await saveFile(contentId, file);
-    } catch (err) {
-      alert('Could not save file locally: ' + (err instanceof Error ? err.message : 'unknown error'));
+    if (!user?.token) { alert('Please login again'); return; }
+
+    const apiGroupId = Number(decoded);
+    const apiSubjectId = Number(subjectId);
+
+    if (!Number.isInteger(apiGroupId) || !Number.isInteger(apiSubjectId)) {
+      alert('This upload needs backend group_id and subject_id numbers.');
       return;
     }
-    addContent({
-      contentId,
-      subjectId,
-      kind,
-      title: title.trim(),
-      fileName: file.name,
-      hiddenByParent: false,
-      uploadedBy: user?.name || 'Unknown',
-    });
-    alert('Uploaded.');
-    navigate(-1);
+
+    setUploading(true);
+
+    try {
+      const { downloadUrl } = await uploadContentFileToFirebase(file, decoded, subjectId);
+      const response = await uploadContent({
+        group_id: apiGroupId,
+        subject_id: apiSubjectId,
+        subject_name: subject?.name,
+        content_type: kind,
+        title: title.trim(),
+        file_url: downloadUrl,
+      }, user.token);
+
+      addContent({
+        contentId: response.data?.contentId || Date.now(),
+        subjectId,
+        kind,
+        title: title.trim(),
+        fileName: file.name,
+        hiddenByParent: false,
+        uploadedBy: user.name,
+      });
+
+      alert('Uploaded.');
+      navigate(-1);
+    } catch (err) {
+      alert('Upload failed: ' + (err instanceof Error ? err.message : 'unknown error'));
+    } finally {
+      setUploading(false);
+    }
   }
 
   if (!group || !subject) return <div className="empty">Not found.</div>;
 
   return (
     <div style={{ padding: 20 }}>
-      <button className="back-link" onClick={() => navigate(-1)}>← Back</button>
+      <button className="back-link" onClick={() => navigate(-1)}>Back</button>
 
       <div className={`info-box ${isSchool ? 'green' : ''}`}>
-        Uploading to <b>{subject.name}</b> · {group.name}
+        Uploading to <b>{subject.name}</b> - {group.name}
       </div>
 
       <label className="label">Content type</label>
@@ -69,18 +93,18 @@ export default function UploadPage() {
       <form onSubmit={submit}>
         <label className="label">Title</label>
         <input className="input" value={title} onChange={(e) => setTitle(e.target.value)}
-          placeholder="e.g. Chapter 3 – Fractions" />
+          placeholder="e.g. Chapter 3 - Fractions" />
 
         <label className="label">File</label>
         <label className="file-picker">
           <input type="file" hidden
-            accept={kind === 'video' ? 'video/*' : '*/*'}
+            accept={kind === 'video' ? 'video/*' : kind === 'document' ? 'application/pdf,.pdf' : '*/*'}
             onChange={(e) => setFile(e.target.files?.[0] || null)} />
-          {file ? `📎 ${file.name}` : '📁 Click to select file'}
+          {file ? `Selected: ${file.name}` : 'Click to select file'}
         </label>
 
-        <button className={`btn ${isSchool ? 'btn-green' : ''}`} type="submit" style={{ marginTop: 24 }}>
-          ⬆ {t.upload}
+        <button className={`btn ${isSchool ? 'btn-green' : ''}`} type="submit" style={{ marginTop: 24 }} disabled={uploading}>
+          {uploading ? 'Uploading...' : t.upload}
         </button>
       </form>
     </div>
