@@ -1,6 +1,7 @@
 // src/controllers/group.controller.js
 
 const db = require('../config/db');
+const bcrypt = require('bcrypt');
 
 // Create school (admin only)
 exports.createSchool = async (req, res) => {
@@ -359,7 +360,138 @@ exports.uploadContent = async (req, res) => {
   }
 };
 
+exports.createPasswordForParent = async (req, res) => {
+  const { student_phone, student_number, phone, password } = req.body;
+  const studentPhone = student_phone || student_number || phone;
+
+  if (req.user?.role !== 'admin') {
+    return res.status(403).json({ message: 'Only admin can create parent password' });
+  }
+
+  try {
+    if (!studentPhone || !password) {
+      return res.status(400).json({ message: 'student phone and password are required' });
+    }
+
+    const [students] = await db.query(
+      'SELECT student_id, name FROM Students WHERE phone_number = ?',
+      [studentPhone]
+    );
+
+    if (!students.length) {
+      return res.status(400).json({ message: 'Student not found' });
+    }
+
+    const student = students[0];
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    const [result] = await db.query(
+      `INSERT INTO Passwords (student_id, student_name, password_hash, created_by)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         student_name = VALUES(student_name),
+         password_hash = VALUES(password_hash),
+         created_by = VALUES(created_by)`,
+      [student.student_id, student.name, passwordHash, req.user.id]
+    );
+
+    res.status(result.insertId ? 201 : 200).json({
+      message: result.insertId ? 'Parent password created' : 'Parent password updated',
+      studentId: student.student_id,
+      studentName: student.name,
+    });
+  } catch (e) {
+    res.status(500).json({ message: 'Server error', error: e.message });
+  }
+};
+
 // ✅ Hide content (parent/admin)
+exports.hideContentByParent = async (req, res) => {
+  const { content_id, group_id, subject_id, password } = req.body;
+
+  if (req.user?.role !== 'student') {
+    return res.status(403).json({ message: 'Only student account can hide content by parent password' });
+  }
+
+  try {
+    if (!content_id || !group_id || !subject_id || !password) {
+      return res.status(400).json({
+        message: 'content_id, group_id, subject_id, and password are required',
+      });
+    }
+
+    const [students] = await db.query(
+      `SELECT student_id, school_id, group_id
+       FROM Students
+       WHERE student_id = ?`,
+      [req.user.id]
+    );
+
+    if (!students.length) {
+      return res.status(400).json({ message: 'Student not found' });
+    }
+
+    const student = students[0];
+
+    if (Number(student.group_id) !== Number(group_id)) {
+      return res.status(403).json({ message: 'Student does not belong to this group' });
+    }
+
+    const [passwordRows] = await db.query(
+      `SELECT password_hash
+       FROM Passwords
+       WHERE student_id = ?`,
+      [student.student_id]
+    );
+
+    if (!passwordRows.length) {
+      return res.status(400).json({ message: 'No parent password set for this student' });
+    }
+
+    const passwordMatches = await bcrypt.compare(password, passwordRows[0].password_hash);
+
+    if (!passwordMatches) {
+      return res.status(401).json({ message: 'Incorrect parent password' });
+    }
+
+    const [contents] = await db.query(
+      `SELECT c.content_id, c.group_id, c.subject_id, s.school_id
+       FROM Content c
+       JOIN Subjects s ON s.subject_id = c.subject_id
+       JOIN Study_Groups g ON g.group_id = c.group_id
+       WHERE c.content_id = ?
+         AND c.group_id = ?
+         AND c.subject_id = ?
+         AND s.group_id = c.group_id
+         AND g.school_id = ?`,
+      [content_id, group_id, subject_id, student.school_id]
+    );
+
+    if (!contents.length) {
+      return res.status(400).json({
+        message: 'Content, group, subject, and student school do not match',
+      });
+    }
+
+    await db.query(
+      'UPDATE Content SET is_hidden_by_parent = 1 WHERE content_id = ?',
+      [content_id]
+    );
+
+    res.json({
+      message: 'Content hidden by parent',
+      contentId: Number(content_id),
+      groupId: Number(group_id),
+      subjectId: Number(subject_id),
+      studentId: student.student_id,
+      schoolId: student.school_id,
+      hidden: true,
+    });
+  } catch (e) {
+    res.status(500).json({ message: 'Server error', error: e.message });
+  }
+};
+
 exports.hideContent = async (req, res) => {
   const { hidden } = req.body;
 

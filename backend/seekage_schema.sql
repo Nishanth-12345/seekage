@@ -18,6 +18,7 @@ CREATE TABLE Users (
   state            VARCHAR(50) DEFAULT NULL,
   preferred_language ENUM('en','ml') DEFAULT 'en',
   group_id         INT DEFAULT NULL,
+  school_id        INT DEFAULT NULL,
   created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -43,6 +44,37 @@ CREATE TABLE Study_Groups (
 ALTER TABLE Users
   ADD CONSTRAINT fk_users_group
   FOREIGN KEY (group_id) REFERENCES Study_Groups(group_id) ON DELETE SET NULL;
+
+ALTER TABLE Users
+  ADD CONSTRAINT fk_users_school
+  FOREIGN KEY (school_id) REFERENCES Schools(school_id) ON DELETE SET NULL;
+
+CREATE TABLE Students (
+  student_id INT AUTO_INCREMENT PRIMARY KEY,
+  name       VARCHAR(100) NOT NULL,
+  phone_number VARCHAR(15) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  school_id  INT DEFAULT NULL,
+  group_id   INT DEFAULT NULL,
+  age        INT NOT NULL,
+  state      VARCHAR(50) DEFAULT NULL,
+  preferred_language ENUM('en','ml') DEFAULT 'en',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (school_id) REFERENCES Schools(school_id) ON DELETE SET NULL,
+  FOREIGN KEY (group_id)  REFERENCES Study_Groups(group_id) ON DELETE SET NULL
+);
+
+CREATE TABLE Passwords (
+  password_id INT AUTO_INCREMENT PRIMARY KEY,
+  student_id  INT NOT NULL UNIQUE,
+  student_name VARCHAR(100) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  created_by INT DEFAULT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (student_id) REFERENCES Students(student_id) ON DELETE CASCADE,
+  FOREIGN KEY (created_by) REFERENCES Users(user_id) ON DELETE SET NULL
+);
 
 -- ─── Content ──────────────────────────────────────────────────────────────────
 CREATE TABLE Content (
@@ -116,7 +148,7 @@ CREATE TABLE Messages (
 -- Password: admin123  (bcrypt hash — change in production!)
 INSERT INTO Users (name, role, phone_number, password_hash)
 VALUES ('Super Admin', 'admin', '9999999999',
-  '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi');
+  '$2b$10$cTCYFuFwTtqok8tqnLOQn..ZNtHCI7aXs/WGU1DQj63Z4JJlDQPJW');
 
 -- ─── Seed: Sample School ─────────────────────────────────────────────────────
 INSERT INTO Schools (school_code, name, place)

@@ -13,11 +13,17 @@ router.get('/school/:schoolId', authMiddleware, groupController.getGroupsBySchoo
 // Create school
 router.post('/school', authMiddleware, groupController.createSchool);
 
+// Create/update parent password for a student
+router.post('/parent-password', authMiddleware, groupController.createPasswordForParent);
+
 // Create group
 router.post('/', authMiddleware, groupController.createGroup);
 
 // Get content by group
 router.get('/content/:groupId', authMiddleware, groupController.getContentByGroup);
+
+// Hide content by parent password from a student account
+router.patch('/content/parent-hide', authMiddleware, groupController.hideContentByParent);
 
 // Create subjects before uploading content
 router.post('/content/seekage', authMiddleware, groupController.createContentBySeekage);

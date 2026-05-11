@@ -96,6 +96,8 @@ exports.createUser = async (req, res) => {
     const ageNumber = parseAge(age);
 
     let groupId = null;
+    let schoolId = null;
+    let studentId = null;
     let userRole = 'student';
     let shouldIncrementStudentCount = false;
 
@@ -154,7 +156,7 @@ exports.createUser = async (req, res) => {
         return res.status(400).json({ message: 'Invalid school code' });
       }
 
-      const schoolId = schools[0].school_id;
+      schoolId = schools[0].school_id;
 
       if (userRole === 'student') {
         groupId = await findOrCreateAvailableGroup(connection, {
@@ -172,12 +174,27 @@ exports.createUser = async (req, res) => {
       shouldIncrementStudentCount = true;
     }
 
-    const [result] = await connection.query(
-      `INSERT INTO Users
-      (name, role, phone_number, password_hash, age, state, preferred_language, group_id, school_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [name, userRole, phone, hash, ageNumber, state, 'en', groupId, schools[0].school_id]
-    );
+    let userId = null;
+
+    if (userRole === 'student') {
+      const [studentResult] = await connection.query(
+        `INSERT INTO Students
+        (name, phone_number, password_hash, school_id, group_id, age, state, preferred_language)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [name, phone, hash, schoolId, groupId, ageNumber, state, 'en']
+      );
+
+      studentId = studentResult.insertId;
+    } else {
+      const [result] = await connection.query(
+        `INSERT INTO Users
+        (name, role, phone_number, password_hash, age, state, preferred_language, group_id, school_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [name, userRole, phone, hash, ageNumber, state, 'en', groupId, schoolId]
+      );
+
+      userId = result.insertId;
+    }
 
     if (shouldIncrementStudentCount) {
       await connection.query(
@@ -190,8 +207,10 @@ exports.createUser = async (req, res) => {
 
     res.status(201).json({
       message: 'Registered successfully',
-      userId: result.insertId,
+      userId,
+      studentId,
       role: userRole,
+      schoolId,
       groupId,
     });
   } catch (e) {
@@ -215,6 +234,42 @@ exports.login = async (req, res) => {
   const { phone, password, role } = req.body;
 
   try {
+    if (role === 'student') {
+      const [students] = await db.query(
+        'SELECT * FROM Students WHERE phone_number = ?',
+        [phone]
+      );
+
+      if (!students.length) {
+        return res.status(401).json({ message: 'User not found' });
+      }
+
+      const student = students[0];
+      const match = await bcrypt.compare(password, student.password_hash);
+
+      if (!match) {
+        return res.status(401).json({ message: 'Wrong password' });
+      }
+
+      const token = jwt.sign(
+        { id: student.student_id, role: 'student' },
+        JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+
+      return res.json({
+        token,
+        user: {
+          id: student.student_id,
+          name: student.name,
+          role: 'student',
+          schoolId: student.school_id,
+          groupId: student.group_id,
+          phone: student.phone_number,
+        },
+      });
+    }
+
     const [users] = await db.query(
       'SELECT * FROM Users WHERE phone_number = ? AND role = ?',
       [phone, role]
@@ -257,19 +312,30 @@ exports.login = async (req, res) => {
 
 // Verify Parent Password
 exports.verifyParentPassword = async (req, res) => {
-  const { userId, password } = req.body;
+  const { studentId, studentPhone, phone, password } = req.body;
+  const lookupPhone = studentPhone || phone;
 
   try {
+    if ((!studentId && !lookupPhone) || !password) {
+      return res.status(400).json({ message: 'studentId or studentPhone, and password are required' });
+    }
+
+    const params = studentId ? [studentId] : [lookupPhone];
+    const whereClause = studentId ? 'p.student_id = ?' : 's.phone_number = ?';
+
     const [rows] = await db.query(
-      'SELECT parent_password FROM Users WHERE user_id = ?',
-      [userId]
+      `SELECT p.password_hash
+       FROM Passwords p
+       JOIN Students s ON s.student_id = p.student_id
+       WHERE ${whereClause}`,
+      params
     );
 
-    if (!rows.length || !rows[0].parent_password) {
+    if (!rows.length) {
       return res.status(400).json({ message: 'No parent password set' });
     }
 
-    const match = await bcrypt.compare(password, rows[0].parent_password);
+    const match = await bcrypt.compare(password, rows[0].password_hash);
 
     if (!match) {
       return res.status(401).json({ message: 'Incorrect parent password' });
