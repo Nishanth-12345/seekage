@@ -412,7 +412,7 @@ exports.hideContentByParent = async (req, res) => {
   if (req.user?.role !== 'student') {
     return res.status(403).json({ message: 'Only student account can hide content by parent password' });
   }
-
+   console.log(req.user);
   try {
     if (!content_id || !group_id || !subject_id || !password) {
       return res.status(400).json({
@@ -455,16 +455,16 @@ exports.hideContentByParent = async (req, res) => {
     }
 
     const [contents] = await db.query(
-      `SELECT c.content_id, c.group_id, c.subject_id, s.school_id
+      `SELECT c.content_id, c.group_id, c.subject_id, g.school_id AS group_school_id, s.school_id AS subject_school_id
        FROM Content c
        JOIN Subjects s ON s.subject_id = c.subject_id
        JOIN Study_Groups g ON g.group_id = c.group_id
        WHERE c.content_id = ?
          AND c.group_id = ?
          AND c.subject_id = ?
-         AND s.group_id = c.group_id
-         AND g.school_id = ?`,
-      [content_id, group_id, subject_id, student.school_id]
+         AND g.school_id = ?
+         AND s.school_id = ?`,
+      [content_id, group_id, subject_id, student.school_id, student.school_id]
     );
 
     if (!contents.length) {
@@ -540,19 +540,96 @@ exports.getQAByGroup = async (req, res) => {
 };
 
 // ✅ Post a question
-exports.createQuestion = async (req, res) => {
-  const { groupId, question } = req.body;
+exports.getQuestionsByContent = async (req, res) => {
+  const { contentId, subjectId } = req.params;
 
   try {
-    await db.query(
-      'INSERT INTO QA_Questions (group_id, asker_id, question_text) VALUES (?, ?, ?)',
-      [groupId, req.user.id, question]
+    if (!contentId || !subjectId) {
+      return res.status(400).json({ message: 'contentId and subjectId are required' });
+    }
+
+    const [questions] = await db.query(
+      `SELECT q.question_id, q.content_id, q.group_id, q.subject_id, q.asker_id,
+              q.question_text, q.created_at,
+              u.name AS asked_by_name,
+              (
+                SELECT JSON_ARRAYAGG(
+                  JSON_OBJECT('text', a.answer_text, 'by', au.name)
+                )
+                FROM QA_Answers a
+                JOIN Users au ON au.user_id = a.answerer_id
+                WHERE a.question_id = q.question_id
+              ) AS answers
+       FROM QA_Questions q
+       JOIN Users u ON u.user_id = q.asker_id
+       WHERE q.content_id = ?
+         AND q.subject_id = ?
+       ORDER BY q.question_id DESC`,
+      [contentId, subjectId]
     );
 
-    res.json({ message: 'Question posted' });
+    res.json(questions);
+  } catch (e) {
+    res.status(500).json({ message: 'Server error', error: e.message });
+  }
+};
+
+exports.createQuestion = async (req, res) => {
+  const { content_id, contentId, group_id, groupId, subject_id, subjectId, question } = req.body;
+  const contentIdValue = content_id || contentId;
+  const groupIdValue = group_id || groupId;
+  const subjectIdValue = subject_id || subjectId;
+  const allowed = ['admin', 'teacher', 'school'];
+
+  if (!allowed.includes(req.user?.role)) {
+    return res.status(403).json({ message: 'Forbidden' });
+  }
+
+  try {
+    if (!contentIdValue || !groupIdValue || !subjectIdValue || !question?.trim()) {
+      return res.status(400).json({
+        message: 'content_id, group_id, subject_id, and question are required',
+      });
+    }
+
+    const [contents] = await db.query(
+      `SELECT content_id, group_id, subject_id, uploader_id, instructor_id
+       FROM Content
+       WHERE content_id = ?
+         AND group_id = ?
+         AND subject_id = ?`,
+      [contentIdValue, groupIdValue, subjectIdValue]
+    );
+
+    if (!contents.length) {
+      return res.status(400).json({ message: 'Invalid content_id, group_id, or subject_id' });
+    }
+
+    const content = contents[0];
+    const ownsContent = Number(content.uploader_id) === Number(req.user.id)
+      || Number(content.instructor_id) === Number(req.user.id);
+
+    if (req.user.role !== 'admin' && !ownsContent) {
+      return res.status(403).json({ message: 'Only the content uploader can add questions' });
+    }
+
+    const [result] = await db.query(
+      `INSERT INTO QA_Questions
+       (content_id, group_id, subject_id, asker_id, question_text)
+       VALUES (?, ?, ?, ?, ?)`,
+      [content.content_id, content.group_id, content.subject_id, req.user.id, question.trim()]
+    );
+
+    res.status(201).json({
+      message: 'Question posted',
+      questionId: result.insertId,
+      contentId: content.content_id,
+      groupId: content.group_id,
+      subjectId: content.subject_id,
+    });
 
   } catch (e) {
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Server error', error: e.message });
   }
 };
 

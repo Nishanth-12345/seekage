@@ -115,11 +115,15 @@ ALTER TABLE Content
 -- ─── Q&A ──────────────────────────────────────────────────────────────────────
 CREATE TABLE QA_Questions (
   question_id   INT AUTO_INCREMENT PRIMARY KEY,
+  content_id    INT NOT NULL,
   group_id      INT NOT NULL,
+  subject_id    INT NOT NULL,
   asker_id      INT NOT NULL,
   question_text TEXT NOT NULL,
   created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (content_id) REFERENCES Content(content_id) ON DELETE CASCADE,
   FOREIGN KEY (group_id) REFERENCES Study_Groups(group_id),
+  FOREIGN KEY (subject_id) REFERENCES Subjects(subject_id),
   FOREIGN KEY (asker_id) REFERENCES Users(user_id)
 );
 

@@ -32,6 +32,12 @@ router.post('/content/school', authMiddleware, groupController.createContentBySc
 // Create course content
 router.post('/content', authMiddleware, groupController.uploadContent);
 
+// Get questions by uploaded content and subject
+router.get('/questions/content/:contentId/subject/:subjectId', authMiddleware, groupController.getQuestionsByContent);
+
+// Create question for uploaded content
+router.post('/questions', authMiddleware, groupController.createQuestion);
+
 // router.post(
 //   '/upload',
 //   authMiddleware,
