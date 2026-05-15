@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, T, Portal, Role, ageGroupOf } from '../../utils/AuthContext';
+import { loginUser } from '../../utils/api';
 
 type Flow = 'pick' | 'seekage-student' | 'school-teacher' | 'school-student';
 
@@ -68,23 +69,39 @@ function SubForm({
   const [password, setPassword] = useState('');
   const [age, setAge] = useState('');
   const [schoolCode, setSchoolCode] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!phone || !password) { alert('Fill phone + password'); return; }
     if (askAge && !age) { alert('Enter your age'); return; }
     if (askSchool && !schoolCode) { alert('Enter school code'); return; }
-    const ageNum = age ? Number(age) : undefined;
-    const group = ageNum ? ageGroupOf(ageNum) : null;
-    onSubmit({
-      id: Date.now(),
-      name: role === 'admin' ? 'Seekage Admin' : role === 'teacher' ? 'Teacher' : 'Student',
-      portal, role, phone,
-      age: ageNum,
-      ageGroup: group || undefined,
-      schoolCode: schoolCode || undefined,
-      token: 'dev-token',
-    });
+
+    setLoading(true);
+    try {
+      const response = await loginUser(phone, password, role);
+      const apiUser = response.data.user;
+      const ageNum = age ? Number(age) : undefined;
+      const group = ageNum ? ageGroupOf(ageNum) : null;
+
+      onSubmit({
+        id: apiUser.id,
+        name: apiUser.name,
+        portal,
+        role: apiUser.role,
+        phone: apiUser.phone,
+        age: ageNum,
+        ageGroup: group || undefined,
+        schoolCode: schoolCode || undefined,
+        schoolId: apiUser.schoolId,
+        groupId: apiUser.groupId,
+        token: response.data.token,
+      });
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'Login failed');
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -112,8 +129,8 @@ function SubForm({
           </>
         )}
 
-        <button className={`btn ${portal === 'school' ? 'btn-green' : ''}`} type="submit" style={{ marginTop: 24 }}>
-          Sign in
+        <button className={`btn ${portal === 'school' ? 'btn-green' : ''}`} type="submit" style={{ marginTop: 24 }} disabled={loading}>
+          {loading ? 'Signing in...' : 'Sign in'}
         </button>
         <button type="button" className="link" onClick={() => navigate('/register')}>No account? Register</button>
       </form>

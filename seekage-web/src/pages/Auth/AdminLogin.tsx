@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../utils/AuthContext';
+import { loginUser } from '../../utils/api';
 
 export default function AdminLogin() {
   const { login } = useAuth();
@@ -8,24 +9,36 @@ export default function AdminLogin() {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [adminCode, setAdminCode] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const ADMIN_CODE = 'SEEKAGE-ADMIN';
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!phone || !password) { alert('Fill phone + password'); return; }
     if (adminCode !== ADMIN_CODE) {
       alert('Invalid admin access code. This page is for Seekage admins only.');
       return;
     }
-    login({
-      id: Date.now(),
-      name: 'Seekage Admin',
-      portal: 'seekage',
-      role: 'admin',
-      phone,
-      token: 'dev-token',
-    });
+
+    setLoading(true);
+    try {
+      const response = await loginUser(phone, password, 'admin');
+      const apiUser = response.data.user;
+      login({
+        id: apiUser.id,
+        name: apiUser.name,
+        portal: 'seekage',
+        role: 'admin',
+        phone: apiUser.phone,
+        schoolId: apiUser.schoolId,
+        token: response.data.token,
+      });
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'Admin login failed');
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -59,7 +72,9 @@ export default function AdminLogin() {
           placeholder="Provided to admins only"
         />
 
-        <button className="btn" type="submit" style={{ marginTop: 24 }}>Sign in as Admin</button>
+        <button className="btn" type="submit" style={{ marginTop: 24 }} disabled={loading}>
+          {loading ? 'Signing in...' : 'Sign in as Admin'}
+        </button>
       </form>
     </div>
   );

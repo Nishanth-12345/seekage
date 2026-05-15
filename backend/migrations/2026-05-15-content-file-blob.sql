@@ -1,0 +1,7 @@
+USE seekage_db;
+
+ALTER TABLE Content
+  ADD COLUMN file_name VARCHAR(255) DEFAULT NULL,
+  ADD COLUMN file_mime_type VARCHAR(100) DEFAULT NULL,
+  ADD COLUMN file_size INT DEFAULT NULL,
+  ADD COLUMN file_blob LONGBLOB;

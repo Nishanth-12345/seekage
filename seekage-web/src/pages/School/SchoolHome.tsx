@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, T } from '../../utils/AuthContext';
 import { useData } from '../../utils/DataContext';
+import { createGroup, fetchSchoolGroups } from '../../utils/api';
 
 export default function SchoolHome() {
   const { user, lang, logout } = useAuth();
-  const { groups, subjects, addGroup } = useData();
+  const { groups, setGroupsData, addGroup } = useData();
   const t = T[lang];
   const navigate = useNavigate();
   const [showAdd, setShowAdd] = useState(false);
@@ -15,17 +16,48 @@ export default function SchoolHome() {
   const code = user?.schoolCode;
   const myGroups = groups.filter((g) => g.portal === 'school' && g.schoolCode === code);
 
-  function addGroupHandler() {
+  useEffect(() => {
+    if (!user?.token || !user.schoolId || !code) return;
+
+    fetchSchoolGroups(user.schoolId, user.token)
+      .then((response) => {
+        setGroupsData(response.data.map((row: any) => ({
+            groupId: String(row.group_id),
+            portal: 'school',
+            schoolCode: code,
+            schoolId: row.school_id,
+            name: row.group_name,
+            teacher: user.name,
+            subjectCount: Number(row.subject_count || 0),
+          })));
+      })
+      .catch((err) => alert(err?.response?.data?.message || 'Failed to load classes'));
+  }, [code, setGroupsData, user?.name, user?.schoolId, user?.token]);
+
+  async function addGroupHandler() {
     if (!newName.trim()) { alert('Enter group name'); return; }
-    addGroup({
-      groupId: `school-${code}-${Date.now()}`,
-      portal: 'school',
-      schoolCode: code,
-      name: newName.trim(),
-      teacher: user?.name,
-    });
-    setNewName('');
-    setShowAdd(false);
+
+    try {
+      if (user?.token && user.schoolId) {
+        const response = await createGroup({
+          group_name: newName.trim(),
+          group_type: 'school_based',
+          school_id: user.schoolId,
+        }, user.token);
+
+        addGroup({
+          groupId: String(response.data.groupId),
+          portal: 'school',
+          schoolCode: code,
+          name: response.data.groupName,
+          teacher: user?.name,
+        });
+      }
+      setNewName('');
+      setShowAdd(false);
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'Failed to create class');
+    }
   }
 
   return (
@@ -51,7 +83,7 @@ export default function SchoolHome() {
       <div className="list">
         {myGroups.length === 0 && <div className="empty">No classes yet.</div>}
         {myGroups.map((g) => {
-          const subjCount = subjects.filter((s) => s.groupId === g.groupId).length;
+          const subjCount = g.subjectCount || 0;
           return (
             <div key={g.groupId} className="card green"
               onClick={() => navigate(`/group/${encodeURIComponent(g.groupId)}`)}>

@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, T, ageGroupOf } from '../../utils/AuthContext';
+import { registerUser } from '../../utils/api';
 
 type Path = 'seekage' | 'school';
 type Who = 'student' | 'teacher';
 
 export default function Register() {
-  const { lang, login } = useAuth();
+  const { lang } = useAuth();
   const t = T[lang];
   const navigate = useNavigate();
 
@@ -18,36 +19,47 @@ export default function Register() {
   const [age, setAge] = useState('');
   const [state, setState] = useState('Kerala');
   const [schoolCode, setSchoolCode] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  function handleRegister(e: React.FormEvent) {
+  async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
     if (!name || !phone || !password) { alert('Fill required fields'); return; }
 
-    if (path === 'seekage') {
-      if (who === 'student') {
-        const ageNum = Number(age);
-        const group = ageGroupOf(ageNum);
-        if (!group) { alert('Age must be 8–16 for Seekage student'); return; }
-        login({ id: Date.now(), name, portal: 'seekage', role: 'student', phone, age: ageNum, ageGroup: group, token: 'dev-token' });
-        return;
-      }
-      // Seekage admin is usually pre-provisioned; allow sign-in shortcut
-      login({ id: Date.now(), name, portal: 'seekage', role: 'admin', phone, token: 'dev-token' });
+    if (who === 'student' && !ageGroupOf(Number(age))) {
+      alert('Age must be between 8 and 16 for student registration');
       return;
     }
 
-    if (!schoolCode) { alert('Enter school code'); return; }
-    login({
-      id: Date.now(),
-      name, portal: 'school', role: who,
-      phone, schoolCode,
-      token: 'dev-token',
-    });
+    if (path === 'school' && !schoolCode) { alert('Enter school code'); return; }
+    if (path === 'seekage' && who !== 'student') {
+      alert('Seekage registration supports students only. Admin users are pre-provisioned.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await registerUser({
+        name,
+        phone,
+        password,
+        age,
+        state,
+        schoolCode: path === 'school' ? schoolCode : undefined,
+        registrationType: path,
+        role: who,
+      });
+      alert('Account created. Please login.');
+      navigate('/login');
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'Registration failed');
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
     <div className="auth-page">
-      <button type="button" className="back-link" onClick={() => navigate(-1)}>← Back</button>
+      <button type="button" className="back-link" onClick={() => navigate(-1)}>Back</button>
       <h2 style={{ color: 'var(--navy)', margin: '0 0 20px' }}>{t.register}</h2>
 
       <div className="path-row" style={{ marginBottom: 10 }}>
@@ -74,7 +86,7 @@ export default function Register() {
 
       <div className="note">
         {path === 'seekage'
-          ? 'Seekage students sign up with age. Ages 8–10 → Group A, 11–13 → Group B, 14–16 → Group C. Admin controls content.'
+          ? 'Seekage students sign up with age. Admin users are pre-provisioned.'
           : "School users need the school code. Teachers upload content; students see only their class."}
       </div>
 
@@ -98,11 +110,11 @@ export default function Register() {
           </>
         )}
 
-        {path === 'seekage' && (
+        {who === 'student' && (
           <>
             <label className="label">{t.age} *</label>
             <input className="input" value={age} onChange={(e) => setAge(e.target.value)}
-              placeholder="Your age (8–16)" inputMode="numeric" />
+              placeholder="Your age (8-16)" inputMode="numeric" />
             {age && !ageGroupOf(Number(age)) && (
               <div style={{ color: '#E65100', fontSize: 12, marginTop: 4 }}>Age must be between 8 and 16.</div>
             )}
@@ -117,7 +129,9 @@ export default function Register() {
         <label className="label">{t.state}</label>
         <input className="input" value={state} onChange={(e) => setState(e.target.value)} />
 
-        <button className="btn" type="submit" style={{ marginTop: 24 }}>{t.register}</button>
+        <button className="btn" type="submit" style={{ marginTop: 24 }} disabled={loading}>
+          {loading ? 'Registering...' : t.register}
+        </button>
       </form>
     </div>
   );

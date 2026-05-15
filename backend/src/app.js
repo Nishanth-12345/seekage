@@ -16,7 +16,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/groups', seekageRoutes);
 
 // Static
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
 // Test route
 app.get('/', (req, res) => {

@@ -49,7 +49,13 @@ exports.createSchool = async (req, res) => {
 exports.getAllGroups = async (req, res) => {
   try {
     const [rows] = await db.query(
-      'SELECT * FROM Study_Groups ORDER BY group_name'
+      `SELECT g.*, s.school_code,
+              COUNT(sub.subject_id) AS subject_count
+       FROM Study_Groups g
+       LEFT JOIN Schools s ON s.school_id = g.school_id
+       LEFT JOIN Subjects sub ON sub.group_id = g.group_id
+       GROUP BY g.group_id
+       ORDER BY g.group_name`
     );
 
     res.json(rows);
@@ -65,7 +71,14 @@ exports.getGroupsBySchool = async (req, res) => {
 
   try {
     const [rows] = await db.query(
-      'SELECT * FROM Study_Groups WHERE school_id = ?',
+      `SELECT g.*, s.school_code,
+              COUNT(sub.subject_id) AS subject_count
+       FROM Study_Groups g
+       LEFT JOIN Schools s ON s.school_id = g.school_id
+       LEFT JOIN Subjects sub ON sub.group_id = g.group_id
+       WHERE g.school_id = ?
+       GROUP BY g.group_id
+       ORDER BY g.group_name`,
       [schoolId]
     );
 
@@ -77,6 +90,24 @@ exports.getGroupsBySchool = async (req, res) => {
 };
 
 // ✅ Create group (admin / school only)
+exports.getSubjectsByGroup = async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `SELECT s.subject_id, s.group_id, s.subject_name, s.instructor_id,
+              s.instructor_name, u.name AS created_by_name
+       FROM Subjects s
+       LEFT JOIN Users u ON u.user_id = s.instructor_id
+       WHERE s.group_id = ?
+       ORDER BY s.subject_name`,
+      [req.params.groupId]
+    );
+
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ message: 'Server error', error: e.message });
+  }
+};
+
 exports.createGroup = async (req, res) => {
   const { group_name, group_type, school_id } = req.body;
 
@@ -223,7 +254,13 @@ const createSubject = async (req, res, instructorName) => {
 exports.getContentByGroup = async (req, res) => {
   try {
     const [rows] = await db.query(
-      'SELECT * FROM Content WHERE group_id = ? ORDER BY content_id DESC',
+      `SELECT content_id, subject_id, group_id, uploader_id, instructor_id,
+              instructor_name, content_type, subject_name, title, file_url,
+              file_name, file_mime_type, file_size, LENGTH(file_blob) AS blob_length,
+              is_hidden_by_parent, uploaded_at
+       FROM Content
+       WHERE group_id = ?
+       ORDER BY content_id DESC`,
       [req.params.groupId]
     );
 
@@ -246,7 +283,13 @@ exports.createContentBySchool = async (req, res) => {
 exports.getContentByGroupForParent = async (req, res) => {
   try {
     const [rows] = await db.query(
-      'SELECT *, is_hidden_by_parent AS hidden FROM Content WHERE group_id = ? ORDER BY content_id DESC',
+      `SELECT content_id, subject_id, group_id, uploader_id, instructor_id,
+              instructor_name, content_type, subject_name, title, file_url,
+              file_name, file_mime_type, file_size, LENGTH(file_blob) AS blob_length,
+              is_hidden_by_parent, is_hidden_by_parent AS hidden, uploaded_at
+       FROM Content
+       WHERE group_id = ?
+       ORDER BY content_id DESC`,
       [req.params.groupId]
     );
     res.json(rows);
@@ -264,7 +307,7 @@ exports.uploadContent = async (req, res) => {
   }
 
   const { subject_id, content_type, subject_name, title, group_id, file_url } = req.body;
-  const fileUrl = req.file ? `/uploads/${req.file.filename}` : file_url?.trim();
+  const fileUrl = file_url?.trim();
 
   try {
     if (!group_id) {
@@ -279,12 +322,16 @@ exports.uploadContent = async (req, res) => {
       return res.status(400).json({ message: 'title is required' });
     }
 
-    if (!fileUrl) {
-      return res.status(400).json({ message: 'file_url is required' });
+    if (!req.file && !fileUrl) {
+      return res.status(400).json({ message: 'file is required' });
     }
 
     if (!['video', 'document', 'note', 'assignment'].includes(content_type)) {
       return res.status(400).json({ message: 'content_type must be video, document, note, or assignment' });
+    }
+
+    if (req.file && content_type === 'video' && !req.file.mimetype.startsWith('video/')) {
+      return res.status(400).json({ message: 'Uploaded file must be a video' });
     }
 
     const group = await getGroupForContent(group_id);
@@ -325,8 +372,9 @@ exports.uploadContent = async (req, res) => {
 
     const [result] = await db.query(
       `INSERT INTO Content 
-      (subject_id, group_id, uploader_id, instructor_id, instructor_name, content_type, subject_name, title, file_url) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (subject_id, group_id, uploader_id, instructor_id, instructor_name, content_type,
+       subject_name, title, file_url, file_name, file_mime_type, file_size, file_blob) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         subject.subject_id,
         group.group_id,
@@ -336,9 +384,22 @@ exports.uploadContent = async (req, res) => {
         content_type,
         subject.subject_name,
         title.trim(),
-        fileUrl,
+        fileUrl || 'pending',
+        req.file?.originalname || null,
+        req.file?.mimetype || null,
+        req.file?.size || null,
+        req.file?.buffer || null,
       ]
     );
+
+    const storedFileUrl = fileUrl || `/api/groups/content/${result.insertId}/file`;
+
+    if (!fileUrl) {
+      await db.query(
+        'UPDATE Content SET file_url = ? WHERE content_id = ?',
+        [storedFileUrl, result.insertId]
+      );
+    }
 
     res.json({
       message: 'Uploaded',
@@ -349,7 +410,11 @@ exports.uploadContent = async (req, res) => {
       schoolId: group.school_id,
       instructorId: req.user.id,
       instructorName,
-      url: fileUrl,
+      url: storedFileUrl,
+      fileUrl: storedFileUrl,
+      fileName: req.file?.originalname,
+      blobStored: Boolean(req.file?.buffer?.length),
+      blobLength: req.file?.buffer?.length || 0,
     });
 
   } catch (e) {
@@ -508,6 +573,38 @@ exports.hideContent = async (req, res) => {
   }
 };
 
+exports.deleteContent = async (req, res) => {
+  const allowed = ['admin', 'teacher', 'school'];
+
+  if (!allowed.includes(req.user?.role)) {
+    return res.status(403).json({ message: 'Forbidden' });
+  }
+
+  try {
+    const [rows] = await db.query(
+      'SELECT content_id, uploader_id, instructor_id FROM Content WHERE content_id = ?',
+      [req.params.id]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({ message: 'Content not found' });
+    }
+
+    const content = rows[0];
+    const ownsContent = Number(content.uploader_id) === Number(req.user.id)
+      || Number(content.instructor_id) === Number(req.user.id);
+
+    if (req.user.role !== 'admin' && !ownsContent) {
+      return res.status(403).json({ message: 'Only the content uploader can delete this content' });
+    }
+
+    await db.query('DELETE FROM Content WHERE content_id = ?', [req.params.id]);
+    res.json({ message: 'Content deleted', contentId: Number(req.params.id) });
+  } catch (e) {
+    res.status(500).json({ message: 'Server error', error: e.message });
+  }
+};
+
 // src/controllers/qa.controller.js
 
 
@@ -569,6 +666,32 @@ exports.getQuestionsByContent = async (req, res) => {
     );
 
     res.json(questions);
+  } catch (e) {
+    res.status(500).json({ message: 'Server error', error: e.message });
+  }
+};
+
+exports.getContentFile = async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `SELECT content_id, file_name, file_mime_type, file_size, file_blob
+       FROM Content
+       WHERE content_id = ?`,
+      [req.params.contentId]
+    );
+
+    if (!rows.length || !rows[0].file_blob) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+
+    const file = rows[0];
+    res.setHeader('Content-Type', file.file_mime_type || 'application/octet-stream');
+    res.setHeader('Content-Length', file.file_size || file.file_blob.length);
+    res.setHeader('Accept-Ranges', 'bytes');
+    if (file.file_name) {
+      res.setHeader('Content-Disposition', `inline; filename="${String(file.file_name).replace(/"/g, '')}"`);
+    }
+    res.end(file.file_blob);
   } catch (e) {
     res.status(500).json({ message: 'Server error', error: e.message });
   }

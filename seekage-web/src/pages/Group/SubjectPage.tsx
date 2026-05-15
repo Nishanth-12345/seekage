@@ -1,16 +1,26 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth, T } from '../../utils/AuthContext';
 import { useData, ContentKind } from '../../utils/DataContext';
 import VideoPlayer from '../../components/VideoPlayer';
+import { deleteContentById, fetchContent, fetchGroups, fetchSubjectsByGroup, hideContentByParent } from '../../utils/api';
 
 const TABS: Array<'all' | ContentKind> = ['all', 'video', 'note', 'document'];
 
 export default function SubjectPage() {
   const { groupId = '', subjectId = '' } = useParams();
   const decoded = decodeURIComponent(groupId);
-  const { user, lang, verifyParentPassword } = useAuth();
-  const { groups, subjects, content, toggleHide, deleteContent } = useData();
+  const { user, lang } = useAuth();
+  const {
+    groups,
+    setGroupsData,
+    subjects,
+    setSubjectsData,
+    content,
+    setContentData,
+    toggleHide,
+    deleteContent,
+  } = useData();
   const t = T[lang];
   const navigate = useNavigate();
 
@@ -26,7 +36,56 @@ export default function SubjectPage() {
   const [activeTab, setActiveTab] = useState<'all' | ContentKind>('all');
   const [modal, setModal] = useState<null | { contentId: number; title: string; currentlyHidden: boolean }>(null);
   const [pw, setPw] = useState('');
-  const [playing, setPlaying] = useState<null | { contentId: number; title: string; fileName: string }>(null);
+  const [playing, setPlaying] = useState<null | { contentId: number; title: string; fileName: string; fileUrl?: string }>(null);
+
+  useEffect(() => {
+    if (!user?.token) return;
+
+    if (!groups.some((g) => g.groupId === decoded)) {
+      fetchGroups(user.token)
+        .then((response) => {
+          setGroupsData(response.data.map((row: any) => ({
+            groupId: String(row.group_id),
+            portal: row.group_type === 'school_based' ? 'school' : 'seekage',
+            name: row.group_name,
+            schoolId: row.school_id,
+            schoolCode: row.school_code,
+            subjectCount: Number(row.subject_count || 0),
+          })));
+        })
+        .catch((err) => alert(err?.response?.data?.message || 'Failed to load groups'));
+    }
+
+    const apiGroupId = Number(decoded);
+    if (!Number.isInteger(apiGroupId)) return;
+
+    fetchSubjectsByGroup(apiGroupId, user.token)
+      .then((response) => {
+        setSubjectsData(response.data.map((row: any) => ({
+          subjectId: String(row.subject_id),
+          groupId: String(row.group_id),
+          name: row.subject_name,
+          createdBy: row.created_by_name || row.instructor_name || 'User',
+        })));
+      })
+      .catch((err) => alert(err?.response?.data?.message || 'Failed to load subjects'));
+
+    fetchContent(apiGroupId, user.token)
+      .then((response) => {
+        console.log('Fetched content:', response.data);
+        setContentData(response.data.map((row: any) => ({
+          contentId: row.content_id,
+          subjectId: String(row.subject_id),
+          kind: row.content_type,
+          title: row.title,
+          fileName: row.file_name || row.file_url || 'content',
+          fileUrl: row.file_url,
+          hiddenByParent: Boolean(row.is_hidden_by_parent),
+          uploadedBy: String(row.uploader_id || ''),
+        })));
+      })
+      .catch((err) => alert(err?.response?.data?.message || 'Failed to load content'));
+  }, [decoded, groups, setContentData, setGroupsData, setSubjectsData, user?.token]);
 
   if (!group || !subject) return <div className="empty">Subject not found.</div>;
 
@@ -40,14 +99,29 @@ export default function SubjectPage() {
     setPw('');
   }
 
-  function confirmHide() {
+  async function confirmHide() {
     if (!modal || !user) return;
-    if (!verifyParentPassword(user.phone, pw)) {
-      alert('Wrong parent password. Contact admin.');
+
+    const apiGroupId = Number(decoded);
+    const apiSubjectId = Number(subjectId);
+
+    if (!user.token || !Number.isInteger(apiGroupId) || !Number.isInteger(apiSubjectId)) {
+      alert('This action needs backend content, group, and subject ids.');
       return;
     }
-    toggleHide(modal.contentId);
-    setModal(null);
+
+    try {
+      await hideContentByParent({
+        content_id: modal.contentId,
+        group_id: apiGroupId,
+        subject_id: apiSubjectId,
+        password: pw,
+      }, user.token);
+      toggleHide(modal.contentId);
+      setModal(null);
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'Unable to hide content');
+    }
   }
 
   return (
@@ -83,7 +157,7 @@ export default function SubjectPage() {
               key={c.contentId}
               className={`card ${themeClass}`}
               style={{ cursor: isPlayable ? 'pointer' : 'default', opacity: locked ? 0.55 : 1 }}
-              onClick={isPlayable ? () => setPlaying({ contentId: c.contentId, title: c.title, fileName: c.fileName }) : undefined}
+              onClick={isPlayable ? () => setPlaying({ contentId: c.contentId, title: c.title, fileName: c.fileName, fileUrl: c.fileUrl }) : undefined}
             >
               <div className={`card-icon ${isSchool ? 'green-ic' : ''}`}>{icon}</div>
               <div style={{ flex: 1 }}>
@@ -106,7 +180,16 @@ export default function SubjectPage() {
               {canDelete && (
                 <button
                   className="hide-btn warn"
-                  onClick={(e) => { e.stopPropagation(); deleteContent(c.contentId); }}>
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    if (!user?.token) return;
+                    try {
+                      await deleteContentById(c.contentId, user.token);
+                      deleteContent(c.contentId);
+                    } catch (err: any) {
+                      alert(err?.response?.data?.message || 'Failed to delete content');
+                    }
+                  }}>
                   Delete
                 </button>
               )}
@@ -145,6 +228,8 @@ export default function SubjectPage() {
           contentId={playing.contentId}
           title={playing.title}
           fileName={playing.fileName}
+          fileUrl={playing.fileUrl}
+          token={user?.token}
           onClose={() => setPlaying(null)}
         />
       )}

@@ -1,16 +1,34 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, T, AGE_GROUPS } from '../../utils/AuthContext';
 import { useData } from '../../utils/DataContext';
+import { fetchGroups } from '../../utils/api';
 
 export default function SeekageHome() {
   const { user, lang, logout } = useAuth();
-  const { groups, subjects } = useData();
+  const { groups, setGroupsData } = useData();
   const t = T[lang];
   const navigate = useNavigate();
 
   const isAdmin = user?.role === 'admin';
-  const myGroupId = user?.ageGroup ? `seekage-${user.ageGroup}` : null;
+  useEffect(() => {
+    if (!user?.token) return;
+
+    fetchGroups(user.token)
+      .then((response) => {
+        setGroupsData(response.data.map((row: any) => ({
+          groupId: String(row.group_id),
+          portal: row.group_type === 'school_based' ? 'school' : 'seekage',
+          name: row.group_name,
+          schoolId: row.school_id,
+          schoolCode: row.school_code,
+          subjectCount: Number(row.subject_count || 0),
+        })));
+      })
+      .catch((err) => alert(err?.response?.data?.message || 'Failed to load groups'));
+  }, [setGroupsData, user?.token]);
+
+  const myGroupId = user?.groupId ? String(user.groupId) : null;
   const visibleGroups = isAdmin
     ? groups.filter((g) => g.portal === 'seekage')
     : groups.filter((g) => g.groupId === myGroupId);
@@ -35,8 +53,8 @@ export default function SeekageHome() {
           <div className="empty">No group assigned. Ask your admin to set your age group.</div>
         )}
         {visibleGroups.map((g) => {
-          const subjCount = subjects.filter((s) => s.groupId === g.groupId).length;
-          const meta = AGE_GROUPS.find((a) => `seekage-${a.id}` === g.groupId);
+          const subjCount = g.subjectCount || 0;
+          const meta = AGE_GROUPS.find((a) => user?.ageGroup === a.id);
           return (
             <div key={g.groupId} className="card"
               onClick={() => navigate(`/group/${encodeURIComponent(g.groupId)}`)}>

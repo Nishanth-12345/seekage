@@ -310,6 +310,68 @@ exports.login = async (req, res) => {
   }
 };
 
+exports.me = async (req, res) => {
+  try {
+    if (req.user.role === 'student') {
+      const [students] = await db.query(
+        `SELECT s.student_id, s.name, s.phone_number, s.school_id, s.group_id,
+                s.age, sc.school_code
+         FROM Students s
+         LEFT JOIN Schools sc ON sc.school_id = s.school_id
+         WHERE s.student_id = ?`,
+        [req.user.id]
+      );
+
+      if (!students.length) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      const student = students[0];
+      return res.json({
+        user: {
+          id: student.student_id,
+          name: student.name,
+          role: 'student',
+          schoolId: student.school_id,
+          schoolCode: student.school_code,
+          groupId: student.group_id,
+          age: student.age,
+          phone: student.phone_number,
+        },
+      });
+    }
+
+    const [users] = await db.query(
+      `SELECT u.user_id, u.name, u.role, u.phone_number, u.school_id,
+              u.group_id, u.age, sc.school_code
+       FROM Users u
+       LEFT JOIN Schools sc ON sc.school_id = u.school_id
+       WHERE u.user_id = ?`,
+      [req.user.id]
+    );
+
+    if (!users.length) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const user = users[0];
+    res.json({
+      user: {
+        id: user.user_id,
+        name: user.name,
+        role: user.role,
+        schoolId: user.school_id,
+        schoolCode: user.school_code,
+        groupId: user.group_id,
+        age: user.age,
+        phone: user.phone_number,
+      },
+    });
+  } catch (e) {
+    res.status(500).json({ message: 'Server error', error: e.message });
+  }
+};
+
 // Verify Parent Password
 exports.verifyParentPassword = async (req, res) => {
   const { studentId, studentPhone, phone, password } = req.body;

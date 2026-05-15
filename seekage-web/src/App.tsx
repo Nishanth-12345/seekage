@@ -16,7 +16,11 @@ import SchoolHome from './pages/School/SchoolHome';
 import ParentSettings from './pages/Admin/ParentSettings';
 
 export default function App() {
-  const { user } = useAuth();
+  const { user, loadingUser } = useAuth();
+
+  if (loadingUser) {
+    return <div className="empty">Loading...</div>;
+  }
 
   if (!user) {
     return (

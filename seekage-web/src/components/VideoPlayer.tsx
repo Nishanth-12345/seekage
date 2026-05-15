@@ -1,14 +1,23 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { getFileBlob } from '../utils/fileStorage';
+import { BASE_URL } from '../utils/api';
 
 interface Props {
   contentId: number;
   title: string;
   fileName: string;
+  fileUrl?: string;
+  token?: string;
   onClose: () => void;
 }
 
-export default function VideoPlayer({ contentId, title, fileName, onClose }: Props) {
+const API_ORIGIN = BASE_URL.replace(/\/api\/?$/, '');
+
+function resolveFileUrl(fileUrl: string) {
+  if (/^https?:\/\//i.test(fileUrl)) return fileUrl;
+  return `${API_ORIGIN}${fileUrl.startsWith('/') ? '' : '/'}${fileUrl}`;
+}
+
+export default function VideoPlayer({ contentId, title, fileName, fileUrl, token, onClose }: Props) {
   const [src, setSrc] = useState<string | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'missing' | 'error'>('loading');
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -16,18 +25,36 @@ export default function VideoPlayer({ contentId, title, fileName, onClose }: Pro
 
   useEffect(() => {
     let cancelled = false;
+    setStatus('loading');
+    setSrc(null);
     (async () => {
       try {
-        const blob = await getFileBlob(contentId);
-        if (cancelled) return;
-        if (!blob) {
-          setStatus('missing');
+        if (fileUrl && token) {
+          const response = await fetch(resolveFileUrl(fileUrl), {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+
+          if (!response.ok) {
+            throw new Error('Unable to load video file');
+          }
+
+          if (cancelled) return;
+          const blob = await response.blob();
+          if (cancelled) return;
+          const url = URL.createObjectURL(blob);
+          createdUrlRef.current = url;
+          setSrc(url);
+          setStatus('ready');
           return;
         }
-        const url = URL.createObjectURL(blob);
-        createdUrlRef.current = url;
-        setSrc(url);
-        setStatus('ready');
+
+        if (fileUrl) {
+          setSrc(resolveFileUrl(fileUrl));
+          setStatus('ready');
+          return;
+        }
+
+        setStatus('missing');
       } catch {
         if (!cancelled) setStatus('error');
       }
@@ -39,7 +66,7 @@ export default function VideoPlayer({ contentId, title, fileName, onClose }: Pro
         createdUrlRef.current = null;
       }
     };
-  }, [contentId]);
+  }, [contentId, fileUrl, token]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {

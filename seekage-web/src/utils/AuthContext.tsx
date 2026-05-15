@@ -1,16 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { fetchCurrentUser } from './api';
 
-const PARENT_PW_KEY = 'seekage:v1:parentPasswords';
-
-function loadParentPasswords(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(PARENT_PW_KEY);
-    if (!raw) return { '9999999999': '1234' };
-    return JSON.parse(raw) as Record<string, string>;
-  } catch {
-    return { '9999999999': '1234' };
-  }
-}
+const TOKEN_KEY = 'seekage:token';
 
 export type Portal = 'seekage' | 'school';
 export type Role = 'admin' | 'student' | 'parent' | 'teacher' | 'counselor' | 'psychologist';
@@ -24,6 +15,8 @@ export interface User {
   age?: number;
   ageGroup?: 'A' | 'B' | 'C';
   schoolCode?: string;
+  schoolId?: number;
+  groupId?: number;
   token: string;
 }
 
@@ -35,9 +28,7 @@ interface AuthContextValue {
   setLang: (l: Lang) => void;
   login: (u: User) => void;
   logout: () => void;
-  parentPasswords: Record<string, string>;   // keyed by student phone number
-  setParentPassword: (phone: string, pwd: string) => void;
-  verifyParentPassword: (phone: string, pwd: string) => boolean;
+  loadingUser: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -50,39 +41,62 @@ export function ageGroupOf(age: number): 'A' | 'B' | 'C' | null {
 }
 
 export const AGE_GROUPS: Array<{ id: 'A' | 'B' | 'C'; label: string; range: string }> = [
-  { id: 'A', label: 'Group A', range: '8 – 10 years' },
-  { id: 'B', label: 'Group B', range: '11 – 13 years' },
-  { id: 'C', label: 'Group C', range: '14 – 16 years' },
+  { id: 'A', label: 'Group A', range: '8 - 10 years' },
+  { id: 'B', label: 'Group B', range: '11 - 13 years' },
+  { id: 'C', label: 'Group C', range: '14 - 16 years' },
 ];
+
+function portalFor(user: { role: string; schoolId?: number | null }) {
+  return user.schoolId ? 'school' : 'seekage';
+}
+
+function toUser(apiUser: any, token: string): User {
+  const age = apiUser.age ? Number(apiUser.age) : undefined;
+  return {
+    id: apiUser.id,
+    name: apiUser.name,
+    portal: portalFor(apiUser),
+    role: apiUser.role,
+    phone: apiUser.phone,
+    age,
+    ageGroup: age ? ageGroupOf(age) || undefined : undefined,
+    schoolCode: apiUser.schoolCode || undefined,
+    schoolId: apiUser.schoolId || undefined,
+    groupId: apiUser.groupId || undefined,
+    token,
+  };
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [lang, setLang] = useState<Lang>('en');
-  const [parentPasswords, setParentPasswords] = useState<Record<string, string>>(() => loadParentPasswords());
+  const [loadingUser, setLoadingUser] = useState(true);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(PARENT_PW_KEY, JSON.stringify(parentPasswords));
-    } catch {
-      // storage full or disabled — keep working in-memory
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) {
+      setLoadingUser(false);
+      return;
     }
-  }, [parentPasswords]);
 
-  const login = (u: User) => setUser(u);
-  const logout = () => setUser(null);
+    fetchCurrentUser(token)
+      .then((response) => setUser(toUser(response.data.user, token)))
+      .catch(() => localStorage.removeItem(TOKEN_KEY))
+      .finally(() => setLoadingUser(false));
+  }, []);
 
-  const normalizePhone = (phone: string) => phone.replace(/\D/g, '');
+  const login = (u: User) => {
+    localStorage.setItem(TOKEN_KEY, u.token);
+    setUser(u);
+  };
 
-  const setParentPassword = (phone: string, pwd: string) =>
-    setParentPasswords((prev) => ({ ...prev, [normalizePhone(phone)]: pwd }));
-
-  const verifyParentPassword = (phone: string, pwd: string) =>
-    parentPasswords[normalizePhone(phone)] === pwd;
+  const logout = () => {
+    localStorage.removeItem(TOKEN_KEY);
+    setUser(null);
+  };
 
   return (
-    <AuthContext.Provider
-      value={{ user, lang, setLang, login, logout, parentPasswords, setParentPassword, verifyParentPassword }}
-    >
+    <AuthContext.Provider value={{ user, lang, setLang, login, logout, loadingUser }}>
       {children}
     </AuthContext.Provider>
   );
@@ -121,8 +135,8 @@ export const T: Record<Lang, Record<string, string>> = {
     hide: 'Hide from student',
     unhide: 'Show to student',
     send: 'Send',
-    typeMessage: 'Type a message…',
-    typeQuestion: 'Ask a question…',
+    typeMessage: 'Type a message...',
+    typeQuestion: 'Ask a question...',
     answer: 'Answer',
     counseling: 'Counseling',
     logout: 'Logout',
@@ -160,12 +174,12 @@ export const T: Record<Lang, Record<string, string>> = {
     meetings: 'മീറ്റിംഗുകൾ',
     hide: 'മറയ്ക്കുക',
     unhide: 'കാണിക്കുക',
-    send: 'അയക്കുക',
-    typeMessage: 'സന്ദേശം ടൈപ്പ് ചെയ്യുക…',
-    typeQuestion: 'ചോദ്യം ചോദിക്കുക…',
+    send: 'അയയ്ക്കുക',
+    typeMessage: 'സന്ദേശം ടൈപ്പ് ചെയ്യുക...',
+    typeQuestion: 'ചോദ്യം ചോദിക്കുക...',
     answer: 'ഉത്തരം',
     counseling: 'കൗൺസിലിംഗ്',
-    logout: 'ലോഗ്ഔട്ട്',
+    logout: 'ലോഗൗട്ട്',
     students: 'വിദ്യാർത്ഥികൾ',
     groups: 'ഗ്രൂപ്പുകൾ',
     teacher: 'അധ്യാപകൻ',
