@@ -2,6 +2,49 @@
 
 const db = require('../config/db');
 const bcrypt = require('bcrypt');
+const fs = require('fs/promises');
+const path = require('path');
+
+const contentUploadDir = path.resolve(__dirname, '../../uploads/content');
+
+const cleanupUploadedFile = async (file) => {
+  if (!file?.filename) return;
+
+  try {
+    await fs.unlink(path.join(contentUploadDir, path.basename(file.filename)));
+  } catch {
+    // Best effort cleanup only.
+  }
+};
+
+const getUserSchoolId = async (user) => {
+  if (!user?.id) return null;
+
+  const table = user.role === 'student' ? 'Students' : 'Users';
+  const idColumn = user.role === 'student' ? 'student_id' : 'user_id';
+  const [rows] = await db.query(
+    `SELECT school_id FROM ${table} WHERE ${idColumn} = ?`,
+    [user.id]
+  );
+
+  return rows[0]?.school_id || null;
+};
+
+const buildVisibleGroupsWhere = async (user) => {
+  if (user?.role === 'admin') {
+    return { where: '', params: [] };
+  }
+
+  const schoolId = await getUserSchoolId(user);
+  if (schoolId) {
+    return {
+      where: 'WHERE g.school_id IS NULL OR g.school_id = ?',
+      params: [schoolId],
+    };
+  }
+
+  return { where: 'WHERE g.school_id IS NULL', params: [] };
+};
 
 // Create school (admin only)
 exports.createSchool = async (req, res) => {
@@ -48,14 +91,17 @@ exports.createSchool = async (req, res) => {
 // ✅ Get all groups
 exports.getAllGroups = async (req, res) => {
   try {
+    const { where, params } = await buildVisibleGroupsWhere(req.user);
     const [rows] = await db.query(
       `SELECT g.*, s.school_code,
               COUNT(sub.subject_id) AS subject_count
        FROM Study_Groups g
        LEFT JOIN Schools s ON s.school_id = g.school_id
        LEFT JOIN Subjects sub ON sub.group_id = g.group_id
+       ${where}
        GROUP BY g.group_id
-       ORDER BY g.group_name`
+       ORDER BY g.group_name`,
+      params
     );
 
     res.json(rows);
@@ -70,13 +116,20 @@ exports.getGroupsBySchool = async (req, res) => {
   const { schoolId } = req.params;
 
   try {
+    if (req.user?.role !== 'admin') {
+      const userSchoolId = await getUserSchoolId(req.user);
+      if (!userSchoolId || Number(userSchoolId) !== Number(schoolId)) {
+        return res.status(403).json({ message: 'Forbidden' });
+      }
+    }
+
     const [rows] = await db.query(
       `SELECT g.*, s.school_code,
               COUNT(sub.subject_id) AS subject_count
        FROM Study_Groups g
        LEFT JOIN Schools s ON s.school_id = g.school_id
        LEFT JOIN Subjects sub ON sub.group_id = g.group_id
-       WHERE g.school_id = ?
+       WHERE g.school_id IS NULL OR g.school_id = ?
        GROUP BY g.group_id
        ORDER BY g.group_name`,
       [schoolId]
@@ -139,6 +192,13 @@ exports.createGroup = async (req, res) => {
 
     if (normalizedGroupType === 'school_based' && !normalizedSchoolId) {
       return res.status(400).json({ message: 'school_id is required for school-based groups' });
+    }
+
+    if (normalizedGroupType === 'school_based' && req.user.role !== 'admin') {
+      const userSchoolId = await getUserSchoolId(req.user);
+      if (!userSchoolId || Number(userSchoolId) !== Number(normalizedSchoolId)) {
+        return res.status(403).json({ message: 'You can only create groups for your school' });
+      }
     }
 
     const [result] = await db.query(
@@ -301,9 +361,13 @@ exports.getContentByGroupForParent = async (req, res) => {
 // ✅ Upload content
 exports.uploadContent = async (req, res) => {
   const allowed = ['admin', 'teacher', 'school'];
+  const fail = async (status, message) => {
+    await cleanupUploadedFile(req.file);
+    return res.status(status).json({ message });
+  };
 
   if (!allowed.includes(req.user?.role)) {
-    return res.status(403).json({ message: 'Forbidden' });
+    return fail(403, 'Forbidden');
   }
 
   const { subject_id, content_type, subject_name, title, group_id, file_url } = req.body;
@@ -311,41 +375,41 @@ exports.uploadContent = async (req, res) => {
 
   try {
     if (!group_id) {
-      return res.status(400).json({ message: 'group_id is required' });
+      return fail(400, 'group_id is required');
     }
 
     if (!subject_id) {
-      return res.status(400).json({ message: 'subject_id is required' });
+      return fail(400, 'subject_id is required');
     }
 
     if (!title?.trim()) {
-      return res.status(400).json({ message: 'title is required' });
+      return fail(400, 'title is required');
     }
 
     if (!req.file && !fileUrl) {
-      return res.status(400).json({ message: 'file is required' });
+      return fail(400, 'file is required');
     }
 
     if (!['video', 'document', 'note', 'assignment'].includes(content_type)) {
-      return res.status(400).json({ message: 'content_type must be video, document, note, or assignment' });
+      return fail(400, 'content_type must be video, document, note, or assignment');
     }
 
     if (req.file && content_type === 'video' && !req.file.mimetype.startsWith('video/')) {
-      return res.status(400).json({ message: 'Uploaded file must be a video' });
+      return fail(400, 'Uploaded file must be a video');
     }
 
     const group = await getGroupForContent(group_id);
 
     if (!group) {
-      return res.status(400).json({ message: 'Invalid group_id' });
+      return fail(400, 'Invalid group_id');
     }
 
     if (group.group_type === 'school_based' && !group.school_id) {
-      return res.status(400).json({ message: 'School group must be linked to a school' });
+      return fail(400, 'School group must be linked to a school');
     }
 
     if (req.user.role !== 'admin' && group.group_type !== 'school_based') {
-      return res.status(403).json({ message: 'Only admin can upload Seekage content' });
+      return fail(403, 'Only admin can upload Seekage content');
     }
 
     const [subjects] = await db.query(
@@ -356,18 +420,19 @@ exports.uploadContent = async (req, res) => {
     );
 
     if (!subjects.length) {
-      return res.status(400).json({ message: 'Invalid subject_id for this group_id' });
+      return fail(400, 'Invalid subject_id for this group_id');
     }
 
     const subject = subjects[0];
     const instructorName = group.group_type === 'school_based' ? 'school' : 'seekage';
+    const storedFileUrl = fileUrl || (req.file ? `/uploads/content/${req.file.filename}` : null);
 
     if (subject.instructor_name !== instructorName) {
-      return res.status(400).json({ message: 'Subject instructor type does not match group type' });
+      return fail(400, 'Subject instructor type does not match group type');
     }
 
     if (subject_name && subject_name.trim() !== subject.subject_name) {
-      return res.status(400).json({ message: 'subject_name does not match subject_id' });
+      return fail(400, 'subject_name does not match subject_id');
     }
 
     const [result] = await db.query(
@@ -384,22 +449,13 @@ exports.uploadContent = async (req, res) => {
         content_type,
         subject.subject_name,
         title.trim(),
-        fileUrl || 'pending',
+        storedFileUrl,
         req.file?.originalname || null,
         req.file?.mimetype || null,
         req.file?.size || null,
-        req.file?.buffer || null,
+        null,
       ]
     );
-
-    const storedFileUrl = fileUrl || `/api/groups/content/${result.insertId}/file`;
-
-    if (!fileUrl) {
-      await db.query(
-        'UPDATE Content SET file_url = ? WHERE content_id = ?',
-        [storedFileUrl, result.insertId]
-      );
-    }
 
     res.json({
       message: 'Uploaded',
@@ -413,11 +469,12 @@ exports.uploadContent = async (req, res) => {
       url: storedFileUrl,
       fileUrl: storedFileUrl,
       fileName: req.file?.originalname,
-      blobStored: Boolean(req.file?.buffer?.length),
-      blobLength: req.file?.buffer?.length || 0,
+      blobStored: false,
+      blobLength: 0,
     });
 
   } catch (e) {
+    await cleanupUploadedFile(req.file);
     res.status(500).json({
       message: 'Server error',
       error: e.message,
@@ -582,7 +639,7 @@ exports.deleteContent = async (req, res) => {
 
   try {
     const [rows] = await db.query(
-      'SELECT content_id, uploader_id, instructor_id FROM Content WHERE content_id = ?',
+      'SELECT content_id, uploader_id, instructor_id, file_url FROM Content WHERE content_id = ?',
       [req.params.id]
     );
 
@@ -599,6 +656,17 @@ exports.deleteContent = async (req, res) => {
     }
 
     await db.query('DELETE FROM Content WHERE content_id = ?', [req.params.id]);
+
+    if (content.file_url?.startsWith('/uploads/content/')) {
+      const filename = path.basename(content.file_url);
+      const filePath = path.join(contentUploadDir, filename);
+      try {
+        await fs.unlink(filePath);
+      } catch {
+        // The DB row is the source of truth; missing files should not block deletion.
+      }
+    }
+
     res.json({ message: 'Content deleted', contentId: Number(req.params.id) });
   } catch (e) {
     res.status(500).json({ message: 'Server error', error: e.message });
@@ -674,17 +742,26 @@ exports.getQuestionsByContent = async (req, res) => {
 exports.getContentFile = async (req, res) => {
   try {
     const [rows] = await db.query(
-      `SELECT content_id, file_name, file_mime_type, file_size, file_blob
+      `SELECT content_id, file_url, file_name, file_mime_type, file_size, file_blob
        FROM Content
        WHERE content_id = ?`,
       [req.params.contentId]
     );
 
-    if (!rows.length || !rows[0].file_blob) {
+    if (!rows.length) {
       return res.status(404).json({ message: 'File not found' });
     }
 
     const file = rows[0];
+
+    if (!file.file_blob && file.file_url) {
+      return res.redirect(file.file_url);
+    }
+
+    if (!file.file_blob) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+
     res.setHeader('Content-Type', file.file_mime_type || 'application/octet-stream');
     res.setHeader('Content-Length', file.file_size || file.file_blob.length);
     res.setHeader('Accept-Ranges', 'bytes');

@@ -44,7 +44,7 @@ export default function QAPage() {
 
   const apiGroupId = Number(decoded);
   const apiSubjectId = Number(subjectId);
-  const canUseBackend = Boolean(user?.token && Number.isInteger(contentId) && Number.isInteger(apiSubjectId));
+  const canUseBackend = Boolean(user?.token && Number.isInteger(contentId) && contentId > 0 && Number.isInteger(apiSubjectId));
   const localList = qa.filter((q) => q.subjectId === subjectId);
   const list = canUseBackend
     ? remoteQuestions.map((item) => ({

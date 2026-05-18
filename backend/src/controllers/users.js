@@ -179,9 +179,9 @@ exports.createUser = async (req, res) => {
     if (userRole === 'student') {
       const [studentResult] = await connection.query(
         `INSERT INTO Students
-        (name, phone_number, password_hash, school_id, group_id, age, state, preferred_language)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [name, phone, hash, schoolId, groupId, ageNumber, state, 'en']
+        (name, phone_number, password_hash, school_id, group_id, age, state, preferred_language, \`type\`)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [name, phone, hash, schoolId, groupId, ageNumber, state, 'en', registrationType]
       );
 
       studentId = studentResult.insertId;

@@ -6,6 +6,20 @@ import { fetchGroups, fetchSubjectsByGroup, uploadContent } from '../../utils/ap
 
 const TYPES: ContentKind[] = ['video', 'note', 'document', 'assignment'];
 
+const TYPE_COPY: Record<ContentKind, string> = {
+  video: 'Upload recorded lessons or explainers.',
+  note: 'Share notes, summaries, and study material.',
+  document: 'Attach PDF documents for reading.',
+  assignment: 'Publish tasks or worksheets for students.',
+};
+
+function typeIcon(kind: ContentKind) {
+  if (kind === 'video') return '🎬';
+  if (kind === 'document') return '📄';
+  if (kind === 'assignment') return '📑';
+  return '📝';
+}
+
 export default function UploadPage() {
   const { groupId = '', subjectId = '' } = useParams();
   const decoded = decodeURIComponent(groupId);
@@ -16,6 +30,7 @@ export default function UploadPage() {
   const group = groups.find((g) => g.groupId === decoded);
   const subject = subjects.find((s) => s.subjectId === subjectId);
   const isSchool = group?.portal === 'school';
+  const themeClass = isSchool ? 'green' : '';
 
   const [kind, setKind] = useState<ContentKind>('video');
   const [title, setTitle] = useState('');
@@ -77,7 +92,7 @@ export default function UploadPage() {
       if (subject?.name) formData.append('subject_name', subject.name);
       formData.append('content_type', kind);
       formData.append('title', title.trim());
-      console.log('Uploading file:', file);
+
       const uploadBlob = kind === 'video'
         ? file.slice(0, file.size, file.type || 'video/mp4')
         : file;
@@ -108,42 +123,96 @@ export default function UploadPage() {
   if (!group || !subject) return <div className="empty">Not found.</div>;
 
   return (
-    <div style={{ padding: 20 }}>
-      <button className="back-link" onClick={() => navigate(-1)}>Back</button>
-
-      <div className={`info-box ${isSchool ? 'green' : ''}`}>
-        Uploading to <b>{subject.name}</b> - {group.name}
+    <>
+      <div className="group-bar">
+        <div>
+          <div className={`group-name ${themeClass}`}>Upload Content</div>
+          <div style={{ fontSize: 11, color: '#888' }}>{subject.name} - {group.name}</div>
+        </div>
+        <button className="back-link compact" onClick={() => navigate(-1)}>Back</button>
       </div>
 
-      <label className="label">Content type</label>
-      <div className="type-row">
-        {TYPES.map((tp) => (
-          <button key={tp} type="button"
-            className={`type-btn ${kind === tp ? 'active' : ''}`}
-            style={isSchool && kind === tp ? { background: 'var(--green)', borderColor: 'var(--green)' } : undefined}
-            onClick={() => setKind(tp)}>
-            {tp.charAt(0).toUpperCase() + tp.slice(1)}
-          </button>
-        ))}
+      <div className="upload-workspace">
+        <aside className={`upload-sidebar ${themeClass}`}>
+          <div className="side-panel-title">Content Type</div>
+          <div className="side-panel-copy">Choose what you are adding to this subject.</div>
+          <div className="side-menu">
+            {TYPES.map((tp) => (
+              <button
+                key={tp}
+                type="button"
+                className={kind === tp ? 'active' : ''}
+                onClick={() => {
+                  setKind(tp);
+                  setFile(null);
+                }}
+              >
+                <span>{typeIcon(tp)} {tp.charAt(0).toUpperCase() + tp.slice(1)}</span>
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        <main className="upload-form-panel">
+          <div className="content-panel-header">
+            <div>
+              <div className="panel-kicker">{kind}</div>
+              <h2>{typeIcon(kind)} Add {kind.charAt(0).toUpperCase() + kind.slice(1)}</h2>
+            </div>
+          </div>
+
+          <div className={`info-box ${themeClass}`}>
+            {TYPE_COPY[kind]} This upload will be attached to <b>{subject.name}</b>.
+          </div>
+
+          <form onSubmit={submit}>
+            <label className="label">Title</label>
+            <input
+              className="input"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Chapter 3 - Fractions"
+            />
+
+            <label className="label">File</label>
+            <label className="file-picker upload-dropzone">
+              <input
+                type="file"
+                hidden
+                accept={
+                  kind === 'video'
+                    ? 'video/*'
+                    : kind === 'document'
+                      ? '.pdf,application/pdf'
+                      : '*/*'
+                }
+                onChange={(e) => {
+                  const selectedFile = e.target.files?.[0];
+
+                  if (
+                    kind === 'document' &&
+                    selectedFile &&
+                    selectedFile.type !== 'application/pdf'
+                  ) {
+                    alert('Only PDF files are allowed');
+                    return;
+                  }
+
+                  setFile(selectedFile || null);
+                }}
+              />
+
+              <span className="upload-dropzone-icon">{typeIcon(kind)}</span>
+              <strong>{file ? file.name : 'Click to select file'}</strong>
+              <small>{kind === 'document' ? 'PDF files only' : 'Choose a file from this device'}</small>
+            </label>
+
+            <button className={`btn ${isSchool ? 'btn-green' : ''}`} type="submit" style={{ marginTop: 24 }} disabled={uploading}>
+              {uploading ? 'Uploading...' : t.upload}
+            </button>
+          </form>
+        </main>
       </div>
-
-      <form onSubmit={submit}>
-        <label className="label">Title</label>
-        <input className="input" value={title} onChange={(e) => setTitle(e.target.value)}
-          placeholder="e.g. Chapter 3 - Fractions" />
-
-        <label className="label">File</label>
-        <label className="file-picker">
-          <input type="file" hidden
-            accept={kind === 'video' ? 'video/*' : kind === 'document' ? 'application/pdf,.pdf' : '*/*'}
-            onChange={(e) => setFile(e.target.files?.[0] || null)} />
-          {file ? `Selected: ${file.name}` : 'Click to select file'}
-        </label>
-
-        <button className={`btn ${isSchool ? 'btn-green' : ''}`} type="submit" style={{ marginTop: 24 }} disabled={uploading}>
-          {uploading ? 'Uploading...' : t.upload}
-        </button>
-      </form>
-    </div>
+    </>
   );
 }

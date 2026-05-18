@@ -54,6 +54,7 @@ CREATE TABLE Students (
   name       VARCHAR(100) NOT NULL,
   phone_number VARCHAR(15) UNIQUE NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
+  type       ENUM('seekage','school') NOT NULL DEFAULT 'seekage',
   school_id  INT DEFAULT NULL,
   group_id   INT DEFAULT NULL,
   age        INT NOT NULL,

@@ -14,7 +14,9 @@ export default function SchoolHome() {
 
   const isTeacher = user?.role === 'teacher';
   const code = user?.schoolCode;
-  const myGroups = groups.filter((g) => g.portal === 'school' && g.schoolCode === code);
+  const myGroups = groups.filter((g) => (
+    g.portal === 'seekage' || (g.portal === 'school' && g.schoolCode === code)
+  ));
 
   useEffect(() => {
     if (!user?.token || !user.schoolId || !code) return;
@@ -23,11 +25,11 @@ export default function SchoolHome() {
       .then((response) => {
         setGroupsData(response.data.map((row: any) => ({
             groupId: String(row.group_id),
-            portal: 'school',
-            schoolCode: code,
+            portal: row.group_type === 'school_based' ? 'school' : 'seekage',
+            schoolCode: row.school_code || code,
             schoolId: row.school_id,
             name: row.group_name,
-            teacher: user.name,
+            teacher: row.group_type === 'school_based' ? user.name : undefined,
             subjectCount: Number(row.subject_count || 0),
           })));
       })
@@ -73,6 +75,19 @@ export default function SchoolHome() {
         </div>
       </header>
 
+      <section className="dashboard-summary green">
+        <div>
+          <div className="summary-label">School workspace</div>
+          <p className="summary-copy">
+            Review school classes and shared Seekage groups, then open a group to manage subjects, content, Q&A, chat, and meetings.
+          </p>
+        </div>
+        <div className="summary-metric">
+          <strong>{myGroups.length}</strong>
+          <span>{myGroups.length === 1 ? 'group' : 'groups'}</span>
+        </div>
+      </section>
+
       <div className="title-row">
         <div style={{ fontSize: 14, fontWeight: 600, color: '#333' }}>{t.groups}</div>
         {isTeacher && (
@@ -81,13 +96,15 @@ export default function SchoolHome() {
       </div>
 
       <div className="list">
-        {myGroups.length === 0 && <div className="empty">No classes yet.</div>}
+        {myGroups.length === 0 && <div className="empty">No groups yet.</div>}
         {myGroups.map((g) => {
           const subjCount = g.subjectCount || 0;
           return (
-            <div key={g.groupId} className="card green"
+            <div key={g.groupId} className={`card ${g.portal === 'school' ? 'green' : ''}`}
               onClick={() => navigate(`/group/${encodeURIComponent(g.groupId)}`)}>
-              <div className="card-icon green-ic">🏫</div>
+              <div className={`card-icon ${g.portal === 'school' ? 'green-ic' : ''}`}>
+                {g.portal === 'school' ? '🏫' : '📚'}
+              </div>
               <div style={{ flex: 1 }}>
                 <div className="card-title">{g.name}</div>
                 <div className="card-sub">

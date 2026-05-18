@@ -46,6 +46,21 @@ export default function SeekageHome() {
         </div>
       </header>
 
+      <section className="dashboard-summary">
+        <div>
+          <div className="summary-label">{isAdmin ? 'Learning operations' : 'Current learning space'}</div>
+          <p className="summary-copy">
+            {isAdmin
+              ? 'Manage Seekage age groups, subjects, uploaded lessons, student questions, and parent controls from one place.'
+              : 'Open your assigned group to continue lessons, view documents, ask questions, and follow meeting links.'}
+          </p>
+        </div>
+        <div className="summary-metric">
+          <strong>{visibleGroups.length}</strong>
+          <span>{visibleGroups.length === 1 ? 'group' : 'groups'}</span>
+        </div>
+      </section>
+
       <div className="section-title">{isAdmin ? 'All Age Groups' : 'Your Group'}</div>
 
       <div className="list">

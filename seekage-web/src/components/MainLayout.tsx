@@ -22,9 +22,14 @@ export default function MainLayout() {
           </NavLink>
         )}
         {isAdmin && (
-          <NavLink to="/admin/parent-passwords" className={({ isActive }) => (isActive ? 'active' : '')}>
-            <span className="tab-icon">🔑</span><span>Parent PW</span>
-          </NavLink>
+          <>
+            <NavLink to="/admin/create-school" className={({ isActive }) => (isActive ? 'active' : '')}>
+              <span className="tab-icon">🏫</span><span>Create School</span>
+            </NavLink>
+            <NavLink to="/admin/parent-passwords" className={({ isActive }) => (isActive ? 'active' : '')}>
+              <span className="tab-icon">🔑</span><span>Parent PW</span>
+            </NavLink>
+          </>
         )}
       </nav>
     </div>

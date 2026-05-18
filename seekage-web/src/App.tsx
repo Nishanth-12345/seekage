@@ -14,6 +14,8 @@ import ChatPage from './pages/Group/ChatPage';
 import MeetingsPage from './pages/Group/MeetingsPage';
 import SchoolHome from './pages/School/SchoolHome';
 import ParentSettings from './pages/Admin/ParentSettings';
+import CreateSchool from './pages/Admin/CreateSchool';
+import ContentViewPage from './pages/Group/CourseView';
 
 export default function App() {
   const { user, loadingUser } = useAuth();
@@ -42,7 +44,10 @@ export default function App() {
 
         <Route path="seekage" element={<SeekageHome />} />
         <Route path="school" element={<SchoolHome />} />
-
+        <Route
+          path="/group/:groupId/subject/:subjectId/content/:contentId"
+          element={<ContentViewPage />}
+        />
         <Route path="group/:groupId" element={<GroupPage />} />
         <Route path="group/:groupId/subject/:subjectId" element={<SubjectPage />} />
         <Route path="group/:groupId/subject/:subjectId/upload" element={<UploadPage />} />
@@ -51,6 +56,7 @@ export default function App() {
         <Route path="group/:groupId/subject/:subjectId/meetings" element={<MeetingsPage />} />
 
         <Route path="admin/parent-passwords" element={<ParentSettings />} />
+        <Route path="admin/create-school" element={<CreateSchool />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

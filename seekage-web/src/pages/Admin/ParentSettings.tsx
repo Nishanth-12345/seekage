@@ -43,10 +43,13 @@ export default function ParentSettings() {
         </div>
       </header>
 
-      <div style={{ padding: 20 }}>
-        <p style={{ color: '#555', fontSize: 13, marginTop: 0 }}>
+      <div className="admin-form">
+        <div className="form-intro">
+          <h2>Password Control</h2>
+          <p>
           Assign or update the parent password for a student by phone number. The password is stored on the backend.
-        </p>
+          </p>
+        </div>
 
         <form onSubmit={save}>
           <label className="label">Student phone number</label>
